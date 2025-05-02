@@ -117,4 +117,6 @@ st.subheader("💰 Resumo de Bonificações")
 st.markdown(f"""
 <div style='background-color: #f0f8ff; padding: 15px; border-radius: 10px;'>
     <b>Total disponível:</b> R$ {total_bonus_disponivel:,.2f} <br>
-    <b>Total conquist
+    <b>Total conquistado:</b> R$ {total_bonus_conquistado:,.2f}
+</div>
+""", unsafe_allow_html=True)
