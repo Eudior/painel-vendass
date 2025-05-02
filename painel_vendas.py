@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-import datetime
+from datetime import datetime
 import locale
-from babel.numbers import format_currency
 
 # Configurações de idioma
 locale.setlocale(locale.LC_TIME, "pt_BR.UTF-8")
@@ -32,11 +31,11 @@ df_vendas["Valor"] = pd.to_numeric(df_vendas["Valor"].astype(str).str.replace(".
 
 # Filtros
 vendedor = df_vendas["Vendedor"].iloc[0] if not df_vendas.empty else "Indefinido"
-data_atual = datetime.datetime.now().date()
+data_atual = datetime.now().date()
 
 # Cálculo de metas mensais
-meta_mensal = df_metas[df_metas["Tipo"] == "Mensal"]["Valor"].sum()
-bon_mensal = df_metas[df_metas["Tipo"] == "Mensal"]["Bonificacao"].sum()
+meta_mensal = df_metas[df_metas["Tipo"].str.lower() == "mensal"]["Valor"].sum()
+bon_mensal = df_metas[df_metas["Tipo"].str.lower() == "mensal"]["Bonificacao"].sum()
 vendas_mes = df_vendas[df_vendas["Data"].dt.month == data_atual.month]["Valor"].sum()
 progresso_mensal = min(vendas_mes / meta_mensal, 1.0) if meta_mensal > 0 else 0
 bonus_mensal_atingido = vendas_mes >= meta_mensal
@@ -48,16 +47,16 @@ st.markdown(f"**Vendedora:** {vendedor} — {data_atual.strftime('%B de %Y').cap
 st.markdown("---")
 st.subheader("🎯 Meta Mensal")
 st.markdown(f"""
-- **Total vendido:** {format_currency(vendas_mes, 'BRL', locale='pt_BR')}
-- **Meta:** {format_currency(meta_mensal, 'BRL', locale='pt_BR')}
+- **Total vendido:** R$ {vendas_mes:,.2f}
+- **Meta:** R$ {meta_mensal:,.2f}
 - **Progresso:** {round(progresso_mensal * 100, 1)}%
-- **Bonificação:** {"✅" if bonus_mensal_atingido else "❌"} {format_currency(bon_mensal if bonus_mensal_atingido else 0, 'BRL', locale='pt_BR')}
+- **Bonificação:** {"✅" if bonus_mensal_atingido else "❌"} R$ {bon_mensal if bonus_mensal_atingido else 0:,.2f}
 """)
 st.progress(progresso_mensal)
 
 # Semana atual com base nas datas preenchidas
 semana_atual = None
-for _, linha in df_metas[df_metas["Tipo"] == "Semanal"].iterrows():
+for _, linha in df_metas[df_metas["Tipo"].str.lower() == "semanal"].iterrows():
     if linha["Inicio"].date() <= data_atual <= linha["Fim"].date():
         semana_atual = linha
         break
@@ -71,9 +70,9 @@ if semana_atual is not None:
     st.markdown("---")
     st.subheader("🟢 Semana Atual")
     st.markdown(f"""
-    **Semana {int(semana_atual['Semana'])}:** {format_currency(vendas_semana, 'BRL', locale='pt_BR')} de {format_currency(semana_atual['Valor'], 'BRL', locale='pt_BR')} ({round(progresso_semana*100, 1)}%)
+    **Semana {int(semana_atual['Semana'])}:** R$ {vendas_semana:,.2f} de R$ {semana_atual['Valor']:,.2f} ({round(progresso_semana*100, 1)}%)
     
-    **Bonificação:** {"✅" if bonus_atingido else "❌"} {format_currency(semana_atual['Bonificacao'] if bonus_atingido else 0, 'BRL', locale='pt_BR')}
+    **Bonificação:** {"✅" if bonus_atingido else "❌"} R$ {semana_atual['Bonificacao'] if bonus_atingido else 0:,.2f}
     """)
     st.progress(progresso_semana)
 
@@ -83,7 +82,7 @@ st.subheader("🗓️ Todas as Metas Semanais")
 bonus_total = 0
 bonus_ganho = 0
 
-for _, linha in df_metas[df_metas["Tipo"] == "Semanal"].iterrows():
+for _, linha in df_metas[df_metas["Tipo"].str.lower() == "semanal"].iterrows():
     ini = linha["Inicio"].date()
     fim = linha["Fim"].date()
     vendas = df_vendas[(df_vendas["Data"].dt.date >= ini) & (df_vendas["Data"].dt.date <= fim)]["Valor"].sum()
@@ -94,8 +93,8 @@ for _, linha in df_metas[df_metas["Tipo"] == "Semanal"].iterrows():
     bonus_ganho += bonus
 
     st.markdown(f"""
-    **Semana {int(linha['Semana'])} ({ini.strftime('%d/%m')} a {fim.strftime('%d/%m')}):** {format_currency(vendas, 'BRL', locale='pt_BR')} de {format_currency(linha['Valor'], 'BRL', locale='pt_BR')} ({round(progresso*100, 1)}%)  
-    **Bonificação:** {"✅" if bonus > 0 else "❌"} {format_currency(bonus, 'BRL', locale='pt_BR')}
+    **Semana {int(linha['Semana'])} ({ini.strftime('%d/%m')} a {fim.strftime('%d/%m')}):** R$ {vendas:,.2f} de R$ {linha['Valor']:,.2f} ({round(progresso*100, 1)}%)  
+    **Bonificação:** {"✅" if bonus > 0 else "❌"} R$ {bonus:,.2f}
     """)
     st.progress(progresso)
 
@@ -103,6 +102,6 @@ for _, linha in df_metas[df_metas["Tipo"] == "Semanal"].iterrows():
 st.markdown("---")
 st.subheader("💰 Resumo de Bonificações")
 st.info(f"""
-**Total disponível:** {format_currency(bonus_total + bon_mensal, 'BRL', locale='pt_BR')}  
-**Total conquistado:** {format_currency(bonus_ganho + (bon_mensal if bonus_mensal_atingido else 0), 'BRL', locale='pt_BR')}
+**Total disponível:** R$ {bonus_total + bon_mensal:,.2f}  
+**Total conquistado:** R$ {bonus_ganho + (bon_mensal if bonus_mensal_atingido else 0):,.2f}
 """)
