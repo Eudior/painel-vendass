@@ -48,7 +48,7 @@ vendas_mensais = df_vendas["Valor"].sum()
 progresso_mensal = min(vendas_mensais / meta_mensal, 1.0)
 bonus_mensal_conquistado = bonus_mensal if progresso_mensal >= 1 else 0
 
-# Exibição Mensal
+# Exibição Meta Mensal
 st.subheader("🎯 Meta Mensal")
 st.markdown(f"""
 <div style='background-color: #f9f9f9; padding: 15px; border-radius: 10px;'>
@@ -67,36 +67,31 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Metas Semanais
+# Semana Atual
 st.markdown("---")
-st.subheader("📅 Metas Semanais")
+st.subheader("🟢 Semana Atual")
+
+metas_semanais = df_metas[df_metas["Tipo"].str.lower() == "semanal"]
+linha_atual = metas_semanais[metas_semanais["Semana"] == semana_atual]
 
 total_bonus_disponivel = bonus_mensal
 total_bonus_conquistado = bonus_mensal_conquistado
 
-metas_semanais = df_metas[df_metas["Tipo"].str.lower() == "semanal"]
-
-for _, linha in metas_semanais.iterrows():
-    try:
-        semana = int(str(linha["Semana"]).strip())
-        meta = float(linha["Valor"])
-        bonus = float(linha["Bonificacao"])
-    except:
-        continue
-
-    vendas = df_vendas[df_vendas["Semana"] == semana]["Valor"].sum()
-    progresso = min(vendas / meta, 1.0) if meta > 0 else 0
+if not linha_atual.empty:
+    meta = float(linha_atual["Valor"].values[0])
+    bonus = float(linha_atual["Bonificacao"].values[0])
+    vendas = df_vendas[df_vendas["Semana"] == semana_atual]["Valor"].sum()
+    progresso = min(vendas / meta, 1.0)
     conquistou = progresso >= 1
     total_bonus_disponivel += bonus
     if conquistou:
         total_bonus_conquistado += bonus
 
-    destaque = "⚡ " if semana == semana_atual else ""
     cor_barra = "#28a745" if conquistou else "#007BFF"
 
     st.markdown(f"""
     <div style='margin-bottom: 8px;'>
-        <b>{destaque}Semana {semana}:</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)<br>
+        <b>Semana {semana_atual}:</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)<br>
         <b>Bonificação:</b> {"✅ R$ {:,.2f}".format(bonus) if conquistou else "❌ R$ 0,00"}
     </div>
     """, unsafe_allow_html=True)
@@ -109,7 +104,46 @@ for _, linha in metas_semanais.iterrows():
     </div>
     """, unsafe_allow_html=True)
 
-# Resumo Bonificações
+# Todas as metas semanais
+st.markdown("---")
+st.subheader("📅 Todas as Metas Semanais")
+
+for _, linha in metas_semanais.iterrows():
+    try:
+        semana = int(str(linha["Semana"]).strip())
+        meta = float(linha["Valor"])
+        bonus = float(linha["Bonificacao"])
+    except:
+        continue
+
+    if semana == semana_atual:
+        continue  # já exibido acima
+
+    vendas = df_vendas[df_vendas["Semana"] == semana]["Valor"].sum()
+    progresso = min(vendas / meta, 1.0) if meta > 0 else 0
+    conquistou = progresso >= 1
+    total_bonus_disponivel += bonus
+    if conquistou:
+        total_bonus_conquistado += bonus
+
+    cor_barra = "#28a745" if conquistou else "#007BFF"
+
+    st.markdown(f"""
+    <div style='margin-bottom: 8px;'>
+        <b>Semana {semana}:</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)<br>
+        <b>Bonificação:</b> {"✅ R$ {:,.2f}".format(bonus) if conquistou else "❌ R$ 0,00"}
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style='margin-bottom: 25px; height: 25px; background-color: #ddd; border-radius: 5px;'>
+      <div style='width: {progresso*100:.1f}%; height: 100%; background-color: {cor_barra}; border-radius: 5px; text-align: right; color: white; padding-right: 8px; line-height: 25px;'>
+        {progresso*100:.1f}%
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Resumo de Bonificações
 st.markdown("---")
 st.subheader("💰 Resumo de Bonificações")
 
