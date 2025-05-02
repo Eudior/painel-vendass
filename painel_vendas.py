@@ -27,4 +27,5 @@ required_vendas = {"Data", "Vendedor", "Valor"}
 required_metas = {"Tipo", "Semana", "Valor", "Bonificacao"}
 
 if not required_vendas.issubset(set(df_vendas.columns)):
-    st.error("A aba 'vendas' deve conter: Data, Vendedor
+   st.error("A aba 'vendas' deve conter: Data, Vendedor, Valor")
+
