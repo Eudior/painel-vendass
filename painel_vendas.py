@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# URL da planilha pública (substitua se trocar de planilha)
 BASE_URL = "https://docs.google.com/spreadsheets/d/1VQbm73b0Nmm7vSHhSv99IaxlXiHn70wuqI8Nsbx8xug/gviz/tq?tqx=out:csv&sheet="
 
 st.set_page_config(page_title="Painel de Vendas", layout="centered")
@@ -20,11 +19,9 @@ def carregar_aba(nome_aba):
 df_vendas = carregar_aba("vendas")
 df_metas = carregar_aba("metas")
 
-# Padroniza nomes de colunas
 df_vendas.columns = [col.strip().capitalize() for col in df_vendas.columns]
 df_metas.columns = [col.strip().capitalize() for col in df_metas.columns]
 
-# Verificações mínimas
 if not {"Data", "Vendedor", "Valor"}.issubset(df_vendas.columns):
     st.error("A aba 'vendas' deve conter as colunas: Data, Vendedor, Valor.")
     st.stop()
@@ -33,12 +30,15 @@ if not {"Tipo", "Semana", "Inicio", "Fim", "Valor", "Bonificacao"}.issubset(df_m
     st.error("A aba 'metas' deve conter as colunas: Tipo, Semana, Inicio, Fim, Valor, Bonificacao.")
     st.stop()
 
-# Converte datas
 df_vendas["Data"] = pd.to_datetime(df_vendas["Data"], dayfirst=True, errors="coerce")
 df_metas["Inicio"] = pd.to_datetime(df_metas["Inicio"], dayfirst=True, errors="coerce")
 df_metas["Fim"] = pd.to_datetime(df_metas["Fim"], dayfirst=True, errors="coerce")
 
-# Busca meta mensal
+# Corrige possíveis vírgulas e converte para float
+df_metas["Valor"] = pd.to_numeric(df_metas["Valor"].astype(str).str.replace(",", "."), errors="coerce")
+df_metas["Bonificacao"] = pd.to_numeric(df_metas["Bonificacao"].astype(str).str.replace(",", "."), errors="coerce")
+df_vendas["Valor"] = pd.to_numeric(df_vendas["Valor"].astype(str).str.replace(",", "."), errors="coerce")
+
 meta_mensal_row = df_metas[df_metas["Tipo"].str.lower() == "mensal"]
 if meta_mensal_row.empty:
     st.warning("⚠️ Nenhuma meta mensal encontrada.")
@@ -54,10 +54,9 @@ vendas_mes = df_vendas[
     (df_vendas["Data"] <= data_fim_mes)
 ]["Valor"].sum()
 
-progresso_mensal = min(vendas_mes / meta_mensal, 1.0)
+progresso_mensal = min(vendas_mes / meta_mensal, 1.0) if meta_mensal > 0 else 0
 bonus_mensal_ganho = bonus_mensal if progresso_mensal >= 1 else 0
 
-# Exibição mensal
 st.subheader("🎯 Meta Mensal")
 st.markdown(f"""
 <div style='background-color: #f9f9f9; padding: 15px; border-radius: 10px;'>
@@ -76,7 +75,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Identifica semana atual com base na data de hoje
 hoje = datetime.now().date()
 semana_atual = df_metas[
     (df_metas["Tipo"].str.lower() == "semanal") &
@@ -84,11 +82,9 @@ semana_atual = df_metas[
     (df_metas["Fim"].dt.date >= hoje)
 ]
 
-# Bonificação total
 bonus_total = bonus_mensal
 bonus_conquistado = bonus_mensal_ganho
 
-# Semana atual
 st.markdown("---")
 st.subheader("🟢 Semana Atual")
 
@@ -125,7 +121,6 @@ if not semana_atual.empty:
 else:
     st.info("Nenhuma semana atual dentro do período de hoje.")
 
-# Exibe todas as metas semanais
 st.markdown("---")
 st.subheader("📅 Todas as Metas Semanais")
 
@@ -164,7 +159,6 @@ for _, linha in df_semanas.iterrows():
     </div>
     """, unsafe_allow_html=True)
 
-# Resumo final
 st.markdown("---")
 st.subheader("💰 Resumo de Bonificações")
 st.markdown(f"""
