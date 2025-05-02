@@ -6,6 +6,7 @@ BASE_URL = "https://docs.google.com/spreadsheets/d/1VQbm73b0Nmm7vSHhSv99IaxlXiHn
 
 st.set_page_config(page_title="Painel de Vendas", layout="centered")
 
+# Mês exibido
 mes_ano = datetime.now().strftime("%B de %Y").title()
 st.markdown(f"<h1 style='text-align: center; color: #444;'>📈 Painel de Metas de Vendas</h1>", unsafe_allow_html=True)
 st.markdown(f"<h4 style='text-align: center; color: #666;'>Vendedora: Sarah — {mes_ano}</h4>", unsafe_allow_html=True)
@@ -37,6 +38,8 @@ if not required_metas.issubset(set(df_metas.columns)):
 # Processa dados
 df_vendas["Data"] = pd.to_datetime(df_vendas["Data"], dayfirst=True, errors="coerce")
 df_vendas["Semana"] = df_vendas["Data"].dt.day.map(lambda d: 1 if d <= 7 else 2 if d <= 14 else 3 if d <= 21 else 4)
+semana_hoje = datetime.now().day
+semana_atual = 1 if semana_hoje <= 7 else 2 if semana_hoje <= 14 else 3 if semana_hoje <= 21 else 4
 
 # META MENSAL
 meta_mensal_row = df_metas[df_metas["Tipo"].str.lower() == "mensal"]
@@ -80,26 +83,28 @@ for _, linha in metas_semanais.iterrows():
         meta = float(linha["Valor"])
         bonus = float(linha["Bonificacao"])
     except:
-        continue  # Ignora linha inválida
+        continue
 
     vendas = df_vendas[df_vendas["Semana"] == semana]["Valor"].sum()
     progresso = min(vendas / meta, 1.0) if meta > 0 else 0
     conquistou = progresso >= 1
-
     total_bonus_disponivel += bonus
     if conquistou:
         total_bonus_conquistado += bonus
 
+    destaque = "⚡ " if semana == semana_atual else ""
+    cor_barra = "#28a745" if conquistou else "#007BFF"
+
     st.markdown(f"""
     <div style='margin-bottom: 8px;'>
-        <b>Semana {semana}:</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)<br>
+        <b>{destaque}Semana {semana}:</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)<br>
         <b>Bonificação:</b> {"✅ R$ {:,.2f}".format(bonus) if conquistou else "❌ R$ 0,00"}
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown(f"""
     <div style='margin-bottom: 25px; height: 25px; background-color: #ddd; border-radius: 5px;'>
-      <div style='width: {progresso*100:.1f}%; height: 100%; background-color: #2196F3; border-radius: 5px; text-align: right; color: white; padding-right: 8px; line-height: 25px;'>
+      <div style='width: {progresso*100:.1f}%; height: 100%; background-color: {cor_barra}; border-radius: 5px; text-align: right; color: white; padding-right: 8px; line-height: 25px;'>
         {progresso*100:.1f}%
       </div>
     </div>
@@ -112,6 +117,4 @@ st.subheader("💰 Resumo de Bonificações")
 st.markdown(f"""
 <div style='background-color: #f0f8ff; padding: 15px; border-radius: 10px;'>
     <b>Total disponível:</b> R$ {total_bonus_disponivel:,.2f} <br>
-    <b>Total conquistado:</b> R$ {total_bonus_conquistado:,.2f}
-</div>
-""", unsafe_allow_html=True)
+    <b>Total conquist
