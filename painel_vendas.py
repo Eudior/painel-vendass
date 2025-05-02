@@ -1,169 +1,108 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import datetime
+import locale
+from babel.numbers import format_currency
 
-BASE_URL = "https://docs.google.com/spreadsheets/d/1VQbm73b0Nmm7vSHhSv99IaxlXiHn70wuqI8Nsbx8xug/gviz/tq?tqx=out:csv&sheet="
+# Configurações de idioma
+locale.setlocale(locale.LC_TIME, "pt_BR.UTF-8")
+st.set_page_config(page_title="Painel de Metas de Vendas", layout="centered")
 
-st.set_page_config(page_title="Painel de Vendas", layout="centered")
+# URL da planilha
+sheet_url = "https://docs.google.com/spreadsheets/d/1VQbm73b0Nmm7vSHhSv99IaxlXiHn70wuqI8Nsbx8xug/edit#gid=0"
+csv_url = sheet_url.replace("/edit#gid=", "/export?format=csv&gid=")
 
-mes_ano = datetime.now().strftime("%B de %Y").title()
-st.markdown(f"<h1 style='text-align: center; color: #444;'>📈 Painel de Metas de Vendas</h1>", unsafe_allow_html=True)
-st.markdown(f"<h4 style='text-align: center; color: #666;'>Vendedora: Sarah — {mes_ano}</h4>", unsafe_allow_html=True)
-st.markdown("---")
+# URLs das abas
+vendas_url = csv_url + "0"           # Primeira aba (vendas)
+metas_url = csv_url + "1066610443"   # Segunda aba (metas)
 
-@st.cache_data(ttl=0)
-def carregar_aba(nome_aba):
-    url = BASE_URL + nome_aba
-    return pd.read_csv(url)
+# Carrega os dados
+df_vendas = pd.read_csv(vendas_url)
+df_metas = pd.read_csv(metas_url)
 
-df_vendas = carregar_aba("vendas")
-df_metas = carregar_aba("metas")
-
-df_vendas.columns = [col.strip().capitalize() for col in df_vendas.columns]
-df_metas.columns = [col.strip().capitalize() for col in df_metas.columns]
-
-if not {"Data", "Vendedor", "Valor"}.issubset(df_vendas.columns):
-    st.error("A aba 'vendas' deve conter as colunas: Data, Vendedor, Valor.")
-    st.stop()
-
-if not {"Tipo", "Semana", "Inicio", "Fim", "Valor", "Bonificacao"}.issubset(df_metas.columns):
-    st.error("A aba 'metas' deve conter as colunas: Tipo, Semana, Inicio, Fim, Valor, Bonificacao.")
-    st.stop()
-
-df_vendas["Data"] = pd.to_datetime(df_vendas["Data"], dayfirst=True, errors="coerce")
+# Converte colunas de data
+df_vendas["Data"] = pd.to_datetime(df_vendas["Data"], dayfirst=True)
 df_metas["Inicio"] = pd.to_datetime(df_metas["Inicio"], dayfirst=True, errors="coerce")
 df_metas["Fim"] = pd.to_datetime(df_metas["Fim"], dayfirst=True, errors="coerce")
 
-# Corrige possíveis vírgulas e converte para float
-df_metas["Valor"] = pd.to_numeric(df_metas["Valor"].astype(str).str.replace(",", "."), errors="coerce")
-df_metas["Bonificacao"] = pd.to_numeric(df_metas["Bonificacao"].astype(str).str.replace(",", "."), errors="coerce")
-df_vendas["Valor"] = pd.to_numeric(df_vendas["Valor"].astype(str).str.replace(",", "."), errors="coerce")
+# Corrige valores com vírgulas e pontos
+df_metas["Valor"] = pd.to_numeric(df_metas["Valor"].astype(str).str.replace(".", "", regex=False).str.replace(",", "."), errors="coerce")
+df_metas["Bonificacao"] = pd.to_numeric(df_metas["Bonificacao"].astype(str).str.replace(".", "", regex=False).str.replace(",", "."), errors="coerce")
+df_vendas["Valor"] = pd.to_numeric(df_vendas["Valor"].astype(str).str.replace(".", "", regex=False).str.replace(",", "."), errors="coerce")
 
-meta_mensal_row = df_metas[df_metas["Tipo"].str.lower() == "mensal"]
-if meta_mensal_row.empty:
-    st.warning("⚠️ Nenhuma meta mensal encontrada.")
-    st.stop()
+# Filtros
+vendedor = df_vendas["Vendedor"].iloc[0] if not df_vendas.empty else "Indefinido"
+data_atual = datetime.datetime.now().date()
 
-meta_mensal = float(meta_mensal_row["Valor"].values[0])
-bonus_mensal = float(meta_mensal_row["Bonificacao"].values[0])
-data_inicio_mes = meta_mensal_row["Inicio"].values[0]
-data_fim_mes = meta_mensal_row["Fim"].values[0]
-
-vendas_mes = df_vendas[
-    (df_vendas["Data"] >= data_inicio_mes) &
-    (df_vendas["Data"] <= data_fim_mes)
-]["Valor"].sum()
-
+# Cálculo de metas mensais
+meta_mensal = df_metas[df_metas["Tipo"] == "Mensal"]["Valor"].sum()
+bon_mensal = df_metas[df_metas["Tipo"] == "Mensal"]["Bonificacao"].sum()
+vendas_mes = df_vendas[df_vendas["Data"].dt.month == data_atual.month]["Valor"].sum()
 progresso_mensal = min(vendas_mes / meta_mensal, 1.0) if meta_mensal > 0 else 0
-bonus_mensal_ganho = bonus_mensal if progresso_mensal >= 1 else 0
+bonus_mensal_atingido = vendas_mes >= meta_mensal
 
+# Exibição topo
+st.title("📈 Painel de Metas de Vendas")
+st.markdown(f"**Vendedora:** {vendedor} — {data_atual.strftime('%B de %Y').capitalize()}")
+
+st.markdown("---")
 st.subheader("🎯 Meta Mensal")
 st.markdown(f"""
-<div style='background-color: #f9f9f9; padding: 15px; border-radius: 10px;'>
-<b>Total vendido:</b> R$ {vendas_mes:,.2f}<br>
-<b>Meta:</b> R$ {meta_mensal:,.2f}<br>
-<b>Progresso:</b> {progresso_mensal*100:.1f}%<br>
-<b>Bonificação:</b> {"✅ R$ {:,.2f}".format(bonus_mensal) if progresso_mensal >= 1 else "❌ R$ 0,00"}
-</div>
-""", unsafe_allow_html=True)
+- **Total vendido:** {format_currency(vendas_mes, 'BRL', locale='pt_BR')}
+- **Meta:** {format_currency(meta_mensal, 'BRL', locale='pt_BR')}
+- **Progresso:** {round(progresso_mensal * 100, 1)}%
+- **Bonificação:** {"✅" if bonus_mensal_atingido else "❌"} {format_currency(bon_mensal if bonus_mensal_atingido else 0, 'BRL', locale='pt_BR')}
+""")
+st.progress(progresso_mensal)
 
-st.markdown(f"""
-<div style='margin-top: 10px; height: 30px; background-color: #eee; border-radius: 5px;'>
-  <div style='width: {progresso_mensal*100:.1f}%; height: 100%; background-color: #4CAF50; border-radius: 5px; text-align: right; color: white; padding-right: 10px; line-height: 30px;'>
-    {progresso_mensal*100:.1f}%
-  </div>
-</div>
-""", unsafe_allow_html=True)
+# Semana atual com base nas datas preenchidas
+semana_atual = None
+for _, linha in df_metas[df_metas["Tipo"] == "Semanal"].iterrows():
+    if linha["Inicio"].date() <= data_atual <= linha["Fim"].date():
+        semana_atual = linha
+        break
 
-hoje = datetime.now().date()
-semana_atual = df_metas[
-    (df_metas["Tipo"].str.lower() == "semanal") &
-    (df_metas["Inicio"].dt.date <= hoje) &
-    (df_metas["Fim"].dt.date >= hoje)
-]
+if semana_atual is not None:
+    vendas_semana = df_vendas[(df_vendas["Data"].dt.date >= semana_atual["Inicio"].date()) &
+                               (df_vendas["Data"].dt.date <= semana_atual["Fim"].date())]["Valor"].sum()
+    progresso_semana = min(vendas_semana / semana_atual["Valor"], 1.0) if semana_atual["Valor"] > 0 else 0
+    bonus_atingido = vendas_semana >= semana_atual["Valor"]
 
-bonus_total = bonus_mensal
-bonus_conquistado = bonus_mensal_ganho
+    st.markdown("---")
+    st.subheader("🟢 Semana Atual")
+    st.markdown(f"""
+    **Semana {int(semana_atual['Semana'])}:** {format_currency(vendas_semana, 'BRL', locale='pt_BR')} de {format_currency(semana_atual['Valor'], 'BRL', locale='pt_BR')} ({round(progresso_semana*100, 1)}%)
+    
+    **Bonificação:** {"✅" if bonus_atingido else "❌"} {format_currency(semana_atual['Bonificacao'] if bonus_atingido else 0, 'BRL', locale='pt_BR')}
+    """)
+    st.progress(progresso_semana)
 
+# Exibe todas as semanas
 st.markdown("---")
-st.subheader("🟢 Semana Atual")
+st.subheader("🗓️ Todas as Metas Semanais")
+bonus_total = 0
+bonus_ganho = 0
 
-if not semana_atual.empty:
-    linha = semana_atual.iloc[0]
-    semana = int(linha["Semana"])
-    meta = float(linha["Valor"])
-    bonus = float(linha["Bonificacao"])
-    vendas = df_vendas[
-        (df_vendas["Data"] >= linha["Inicio"]) &
-        (df_vendas["Data"] <= linha["Fim"])
-    ]["Valor"].sum()
+for _, linha in df_metas[df_metas["Tipo"] == "Semanal"].iterrows():
+    ini = linha["Inicio"].date()
+    fim = linha["Fim"].date()
+    vendas = df_vendas[(df_vendas["Data"].dt.date >= ini) & (df_vendas["Data"].dt.date <= fim)]["Valor"].sum()
+    progresso = min(vendas / linha["Valor"], 1.0) if linha["Valor"] > 0 else 0
+    bonus = linha["Bonificacao"] if vendas >= linha["Valor"] else 0
 
-    progresso = min(vendas / meta, 1.0) if meta > 0 else 0
-    conquistou = progresso >= 1
-    bonus_total += bonus
-    if conquistou:
-        bonus_conquistado += bonus
-
-    cor = "#28a745" if conquistou else "#007BFF"
+    bonus_total += linha["Bonificacao"]
+    bonus_ganho += bonus
 
     st.markdown(f"""
-    <b>Semana {semana}:</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)<br>
-    <b>Bonificação:</b> {"✅ R$ {:,.2f}".format(bonus) if conquistou else "❌ R$ 0,00"}
-    """, unsafe_allow_html=True)
+    **Semana {int(linha['Semana'])} ({ini.strftime('%d/%m')} a {fim.strftime('%d/%m')}):** {format_currency(vendas, 'BRL', locale='pt_BR')} de {format_currency(linha['Valor'], 'BRL', locale='pt_BR')} ({round(progresso*100, 1)}%)  
+    **Bonificação:** {"✅" if bonus > 0 else "❌"} {format_currency(bonus, 'BRL', locale='pt_BR')}
+    """)
+    st.progress(progresso)
 
-    st.markdown(f"""
-    <div style='margin-top: 5px; height: 25px; background-color: #ddd; border-radius: 5px;'>
-      <div style='width: {progresso*100:.1f}%; height: 100%; background-color: {cor}; border-radius: 5px; text-align: right; color: white; padding-right: 8px; line-height: 25px;'>
-        {progresso*100:.1f}%
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.info("Nenhuma semana atual dentro do período de hoje.")
-
-st.markdown("---")
-st.subheader("📅 Todas as Metas Semanais")
-
-df_semanas = df_metas[df_metas["Tipo"].str.lower() == "semanal"]
-
-for _, linha in df_semanas.iterrows():
-    try:
-        semana = int(str(linha["Semana"]).strip())
-        meta = float(linha["Valor"])
-        bonus = float(linha["Bonificacao"])
-        vendas = df_vendas[
-            (df_vendas["Data"] >= linha["Inicio"]) &
-            (df_vendas["Data"] <= linha["Fim"])
-        ]["Valor"].sum()
-    except:
-        continue
-
-    progresso = min(vendas / meta, 1.0) if meta > 0 else 0
-    conquistou = progresso >= 1
-    bonus_total += bonus
-    if conquistou:
-        bonus_conquistado += bonus
-
-    cor = "#28a745" if conquistou else "#007BFF"
-
-    st.markdown(f"""
-    <b>Semana {semana} ({linha["Inicio"].date():%d/%m} a {linha["Fim"].date():%d/%m}):</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)<br>
-    <b>Bonificação:</b> {"✅ R$ {:,.2f}".format(bonus) if conquistou else "❌ R$ 0,00"}
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div style='margin-bottom: 25px; height: 25px; background-color: #ddd; border-radius: 5px;'>
-      <div style='width: {progresso*100:.1f}%; height: 100%; background-color: {cor}; border-radius: 5px; text-align: right; color: white; padding-right: 8px; line-height: 25px;'>
-        {progresso*100:.1f}%
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
+# Resumo de bonificações
 st.markdown("---")
 st.subheader("💰 Resumo de Bonificações")
-st.markdown(f"""
-<div style='background-color: #f0f8ff; padding: 15px; border-radius: 10px;'>
-<b>Total disponível:</b> R$ {bonus_total:,.2f} <br>
-<b>Total conquistado:</b> R$ {bonus_conquistado:,.2f}
-</div>
-""", unsafe_allow_html=True)
+st.info(f"""
+**Total disponível:** {format_currency(bonus_total + bon_mensal, 'BRL', locale='pt_BR')}  
+**Total conquistado:** {format_currency(bonus_ganho + (bon_mensal if bonus_mensal_atingido else 0), 'BRL', locale='pt_BR')}
+""")
