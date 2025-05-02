@@ -1,113 +1,99 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime, timedelta
-import json
-import os
+from datetime import datetime
+import urllib.parse
 
 # --- Configuração da Página e Título ---
 st.set_page_config(page_title="Painel de Metas de Vendas", layout="wide")
 st.title("📊 Painel de Metas de Vendas")
 
 # --- Constantes e Configurações ---
-# Tentar obter o URL da planilha das secrets do Streamlit ou usar um placeholder
-# GOOGLE_SHEET_URL = st.secrets.get("GOOGLE_SHEET_URL", "URL_DA_SUA_PLANILHA_AQUI")
-# Por enquanto, usar o URL fornecido diretamente (menos seguro para produção)
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bnqOqnJ3C9SXpJZ6txLtOu-pI7NYb6Yy/edit?usp=sharing&ouid=114833001856673794923&rtpof=true&sd=true"
-CREDS_JSON_STRING = st.secrets.get("GOOGLE_CREDS_JSON")
+# Extrair ID da planilha da URL fornecida
+GOOGLE_SHEET_URL_PROVIDED = "https://docs.google.com/spreadsheets/d/1bnqOqnJ3C9SXpJZ6txLtOu-pI7NYb6Yy/"
+# Extraindo o ID de forma mais robusta
+try:
+    sheet_id = GOOGLE_SHEET_URL_PROVIDED.split("/d/")[1].split("/")[0]
+except IndexError:
+    st.error("Não foi possível extrair o ID da planilha da URL fornecida.")
+    st.stop()
+
+BASE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet="
 DEFAULT_VENDEDOR = "Sarah" # Pode ser alterado ou selecionado dinamicamente no futuro
 
-# --- Autenticação e Carregamento de Dados --- 
+# --- Carregamento de Dados via URL CSV --- 
 @st.cache_data(ttl=600) # Cache por 10 minutos
-def load_data(sheet_url):
+def load_data_from_csv(sheet_name):
     try:
-        # Tentar autenticar com credenciais se disponíveis
-        if CREDS_JSON_STRING:
-            creds_dict = json.loads(CREDS_JSON_STRING)
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
-            gc = gspread.authorize(creds)
-            spreadsheet = gc.open_by_url(sheet_url)
-            st.success("Autenticado com sucesso via Service Account!")
-        else:
-            # Tentar acesso público (pode falhar dependendo das permissões)
-            st.warning("Tentando acesso público à planilha. Para maior confiabilidade, configure as credenciais do Google Service Account nos Secrets do Streamlit.")
-            gc = gspread.service_account()
-            spreadsheet = gc.open_by_url(sheet_url)
-            
-        metas_ws = spreadsheet.worksheet("Metas")
-        vendas_ws = spreadsheet.worksheet("Vendas")
-        
-        metas_df = pd.DataFrame(metas_ws.get_all_records())
-        vendas_df = pd.DataFrame(vendas_ws.get_all_records())
-        
+        csv_url = BASE_CSV_URL + urllib.parse.quote(sheet_name)
+        df = pd.read_csv(csv_url)
+        st.success(f"Dados da aba ", sheet_name, " carregados com sucesso via CSV URL!")
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da aba ", sheet_name, " via URL CSV: {e}. Verifique se a planilha está compartilhada como \"Qualquer pessoa com o link pode visualizar\" e se o nome da aba está correto.")
+        return pd.DataFrame()
+
+metas_df_raw = load_data_from_csv("Metas")
+vendas_df_raw = load_data_from_csv("Vendas")
+
+# --- Pré-processamento e Lógica Principal --- 
+if not metas_df_raw.empty and not vendas_df_raw.empty:
+    metas_df = metas_df_raw.copy()
+    vendas_df = vendas_df_raw.copy()
+    try:
         # --- Pré-processamento --- 
+        # Renomear colunas para garantir consistência (remover espaços extras, capitalizar)
+        metas_df.columns = [col.strip() for col in metas_df.columns]
+        vendas_df.columns = [col.strip() for col in vendas_df.columns]
+        
+        # Verificar colunas essenciais
+        required_metas_cols = {"Ano", "Mês", "Vendedor", "Meta_Mensal", "Bonus_Mensal", "Semana", "Inicio_Semana", "Fim_Semana", "Meta_Semanal", "Bonus_Semanal"}
+        required_vendas_cols = {"Data", "Vendedor", "Valor"}
+        
+        if not required_metas_cols.issubset(metas_df.columns):
+            st.error(f"Colunas faltando na aba \"Metas\". Necessário: {required_metas_cols}. Encontrado: {set(metas_df.columns)}")
+            st.stop()
+        if not required_vendas_cols.issubset(vendas_df.columns):
+            st.error(f"Colunas faltando na aba \"Vendas\". Necessário: {required_vendas_cols}. Encontrado: {set(vendas_df.columns)}")
+            st.stop()
+
         # Converter colunas de data para datetime
-        metas_df["Inicio_Semana"] = pd.to_datetime(metas_df["Inicio_Semana"], dayfirst=True, errors='coerce')
-        metas_df["Fim_Semana"] = pd.to_datetime(metas_df["Fim_Semana"], dayfirst=True, errors='coerce')
-        vendas_df["Data"] = pd.to_datetime(vendas_df["Data"], dayfirst=True, errors='coerce')
+        metas_df["Inicio_Semana"] = pd.to_datetime(metas_df["Inicio_Semana"], dayfirst=True, errors=\'coerce\')
+        metas_df["Fim_Semana"] = pd.to_datetime(metas_df["Fim_Semana"], dayfirst=True, errors=\'coerce\')
+        vendas_df["Data"] = pd.to_datetime(vendas_df["Data"], dayfirst=True, errors=\'coerce\')
         
         # Remover linhas onde a conversão de data falhou
         metas_df.dropna(subset=["Inicio_Semana", "Fim_Semana"], inplace=True)
         vendas_df.dropna(subset=["Data"], inplace=True)
 
-        # Converter colunas numéricas (tratando possíveis erros)
+        # Converter colunas numéricas (tratando possíveis erros e vírgulas)
         cols_numericas_metas = ["Meta_Mensal", "Bonus_Mensal", "Meta_Semanal", "Bonus_Semanal"]
         for col in cols_numericas_metas:
-            metas_df[col] = pd.to_numeric(metas_df[col], errors='coerce').fillna(0)
+            # Tratar strings com vírgula como separador decimal antes de converter
+            if metas_df[col].dtype == \'object\':
+                 metas_df[col] = metas_df[col].astype(str).str.replace(\\,\".\", regex=False)
+            metas_df[col] = pd.to_numeric(metas_df[col], errors=\'coerce\').fillna(0)
             
         cols_numericas_vendas = ["Valor"]
         for col in cols_numericas_vendas:
-            vendas_df[col] = pd.to_numeric(vendas_df[col], errors='coerce').fillna(0)
-            
-        return metas_df, vendas_df
+             if vendas_df[col].dtype == \'object\':
+                 vendas_df[col] = vendas_df[col].astype(str).str.replace(\\,\".\", regex=False)
+             vendas_df[col] = pd.to_numeric(vendas_df[col], errors=\'coerce\').fillna(0)
 
-    except gspread.exceptions.APIError as e:
-        st.error(f"Erro de API do Google Sheets: {e}. Verifique se a URL está correta e se a API Google Sheets está habilitada no seu projeto Google Cloud.")
-        return pd.DataFrame(), pd.DataFrame()
-    except gspread.exceptions.SpreadsheetNotFound:
-        st.error(f"Planilha não encontrada na URL: {sheet_url}. Verifique o link.")
-        return pd.DataFrame(), pd.DataFrame()
-    except gspread.exceptions.WorksheetNotFound as e:
-        st.error(f"Aba não encontrada na planilha: {e}. Verifique se as abas 'Metas' e 'Vendas' existem.")
-        return pd.DataFrame(), pd.DataFrame()
+        # Converter colunas de Ano e Mês para numérico em Metas
+        metas_df["Ano"] = pd.to_numeric(metas_df["Ano"], errors=\'coerce\').fillna(0).astype(int)
+        metas_df["Mês"] = pd.to_numeric(metas_df["Mês"], errors=\'coerce\').fillna(0).astype(int)
+
     except Exception as e:
-        st.error(f"Ocorreu um erro inesperado ao carregar os dados: {e}")
-        # Tentar carregar dados locais como fallback (se existirem)
-        try:
-            metas_df = pd.read_excel("planilha_metas_modelo.xlsx", sheet_name="Metas")
-            vendas_df = pd.read_excel("planilha_metas_modelo.xlsx", sheet_name="Vendas")
-            st.warning("Carregando dados do arquivo local 'planilha_metas_modelo.xlsx' como fallback.")
-            # Repetir pré-processamento para dados locais
-            metas_df["Inicio_Semana"] = pd.to_datetime(metas_df["Inicio_Semana"], dayfirst=True, errors='coerce')
-            metas_df["Fim_Semana"] = pd.to_datetime(metas_df["Fim_Semana"], dayfirst=True, errors='coerce')
-            vendas_df["Data"] = pd.to_datetime(vendas_df["Data"], dayfirst=True, errors='coerce')
-            metas_df.dropna(subset=["Inicio_Semana", "Fim_Semana"], inplace=True)
-            vendas_df.dropna(subset=["Data"], inplace=True)
-            cols_numericas_metas = ["Meta_Mensal", "Bonus_Mensal", "Meta_Semanal", "Bonus_Semanal"]
-            for col in cols_numericas_metas:
-                metas_df[col] = pd.to_numeric(metas_df[col], errors='coerce').fillna(0)
-            cols_numericas_vendas = ["Valor"]
-            for col in cols_numericas_vendas:
-                vendas_df[col] = pd.to_numeric(vendas_df[col], errors='coerce').fillna(0)
-            return metas_df, vendas_df
-        except FileNotFoundError:
-            st.error("Arquivo local 'planilha_metas_modelo.xlsx' não encontrado. Não foi possível carregar dados.")
-            return pd.DataFrame(), pd.DataFrame()
-        except Exception as fallback_e:
-            st.error(f"Erro ao carregar dados locais: {fallback_e}")
-            return pd.DataFrame(), pd.DataFrame()
+        st.error(f"Erro durante o pré-processamento dos dados: {e}")
+        st.stop()
 
-metas_df, vendas_df = load_data(GOOGLE_SHEET_URL)
-
-# --- Lógica Principal --- 
-if not metas_df.empty and not vendas_df.empty:
+    # --- Lógica Principal (continua igual) --- 
     # Obter data atual
     hoje = datetime.now().date()
     mes_atual = hoje.month
     ano_atual = hoje.year
 
-    st.subheader(f"Vendedora: {DEFAULT_VENDEDOR} — {hoje.strftime('%B de %Y')}")
+    st.subheader(f"Vendedora: {DEFAULT_VENDEDOR} — {hoje.strftime(\'%B de %Y\')}")
 
     # Filtrar dados para o mês/ano/vendedor atual
     metas_mes_atual = metas_df[
@@ -147,7 +133,7 @@ if not metas_df.empty and not vendas_df.empty:
 
         # --- Semana Atual ---
         st.markdown("## 🟢 Semana Atual")
-        # Certifique-se que 'hoje' é um objeto date, não datetime
+        # Certifique-se que \'hoje\' é um objeto date, não datetime
         hoje_date = hoje if isinstance(hoje, datetime.date.__class__) else hoje.date()
         semana_atual_df = metas_mes_atual[
             (metas_mes_atual["Inicio_Semana"].dt.date <= hoje_date) &
@@ -186,7 +172,7 @@ if not metas_df.empty and not vendas_df.empty:
         st.divider()
 
         # --- Todas as Metas Semanais ---
-        st.markdown(f"## 🗓️ Todas as Metas Semanais de {hoje.strftime('%B')}")
+        st.markdown(f"## 🗓️ Todas as Metas Semanais de {hoje.strftime(\'%B\')}")
         total_bonus_semanal_ganho = 0
 
         for index, semana_info in metas_mes_atual.sort_values(by="Semana").iterrows():
@@ -228,9 +214,8 @@ if not metas_df.empty and not vendas_df.empty:
 
 else:
     # Exibir mensagem apenas se os dataframes estiverem vazios APÓS a tentativa de carregamento
-    if metas_df.empty or vendas_df.empty:
-      st.error("Não foi possível carregar os dados da planilha ou do arquivo local. Verifique as mensagens de erro acima e as permissões da planilha.")
+    st.error("Não foi possível carregar os dados de uma ou ambas as abas da planilha (Metas, Vendas). Verifique as mensagens de erro acima, o compartilhamento da planilha e os nomes das abas.")
 
 # --- Rodapé ---
-st.caption("Desenvolvido por Manus")
+st.caption("Desenvolvido por Manus (versão simplificada)")
 
