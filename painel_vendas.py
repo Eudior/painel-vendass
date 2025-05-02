@@ -22,7 +22,6 @@ df_metas = carregar_aba("metas")
 df_vendas.columns = [col.strip().capitalize() for col in df_vendas.columns]
 df_metas.columns = [col.strip().capitalize() for col in df_metas.columns]
 
-# Verificação
 required_vendas = {"Data", "Vendedor", "Valor"}
 required_metas = {"Tipo", "Semana", "Inicio", "Fim", "Valor", "Bonificacao"}
 
@@ -34,12 +33,10 @@ if not required_metas.issubset(df_metas.columns):
     st.error("A aba 'metas' deve conter: Tipo, Semana, Inicio, Fim, Valor, Bonificacao")
     st.stop()
 
-# Conversões de datas
 df_vendas["Data"] = pd.to_datetime(df_vendas["Data"], dayfirst=True, errors="coerce")
 df_metas["Inicio"] = pd.to_datetime(df_metas["Inicio"], dayfirst=True, errors="coerce")
 df_metas["Fim"] = pd.to_datetime(df_metas["Fim"], dayfirst=True, errors="coerce")
 
-# Identifica a semana atual com base na data de hoje
 hoje = datetime.now().date()
 semana_atual_row = df_metas[
     (df_metas["Tipo"].str.lower() == "semanal") &
@@ -47,7 +44,6 @@ semana_atual_row = df_metas[
     (df_metas["Fim"].dt.date >= hoje)
 ]
 
-# Meta mensal
 meta_mensal_row = df_metas[df_metas["Tipo"].str.lower() == "mensal"]
 meta_mensal = float(meta_mensal_row["Valor"].values[0])
 bonus_mensal = float(meta_mensal_row["Bonificacao"].values[0])
@@ -55,7 +51,6 @@ vendas_mensais = df_vendas["Valor"].sum()
 progresso_mensal = min(vendas_mensais / meta_mensal, 1.0)
 bonus_mensal_conquistado = bonus_mensal if progresso_mensal >= 1 else 0
 
-# Exibição mensal
 st.subheader("🎯 Meta Mensal")
 st.markdown(f"""
 <div style='background-color: #f9f9f9; padding: 15px; border-radius: 10px;'>
@@ -74,7 +69,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Semana atual
 st.markdown("---")
 st.subheader("🟢 Semana Atual")
 
@@ -115,16 +109,22 @@ if not semana_atual_row.empty:
 else:
     st.info("Nenhuma semana atual encontrada para hoje.")
 
-# Metas semanais completas
 st.markdown("---")
 st.subheader("📅 Todas as Metas Semanais")
 
 metas_semanais = df_metas[df_metas["Tipo"].str.lower() == "semanal"]
 
 for _, linha in metas_semanais.iterrows():
-    semana = int(str(linha["Semana"]).strip())
-    meta = float(linha["Valor"])
-    bonus = float(linha["Bonificacao"])
+    try:
+        semana_str = str(linha["Semana"]).strip()
+        if not semana_str.isdigit():
+            continue
+        semana = int(semana_str)
+        meta = float(linha["Valor"])
+        bonus = float(linha["Bonificacao"])
+    except:
+        continue
+
     vendas = df_vendas[
         (df_vendas["Data"].dt.date >= linha["Inicio"].date()) &
         (df_vendas["Data"].dt.date <= linha["Fim"].date())
@@ -152,7 +152,6 @@ for _, linha in metas_semanais.iterrows():
     </div>
     """, unsafe_allow_html=True)
 
-# Resumo de bonificações
 st.markdown("---")
 st.subheader("💰 Resumo de Bonificações")
 st.markdown(f"""
