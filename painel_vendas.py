@@ -6,7 +6,6 @@ BASE_URL = "https://docs.google.com/spreadsheets/d/1VQbm73b0Nmm7vSHhSv99IaxlXiHn
 
 st.set_page_config(page_title="Painel de Vendas", layout="centered")
 
-# Mês exibido
 mes_ano = datetime.now().strftime("%B de %Y").title()
 st.markdown(f"<h1 style='text-align: center; color: #444;'>📈 Painel de Metas de Vendas</h1>", unsafe_allow_html=True)
 st.markdown(f"<h4 style='text-align: center; color: #666;'>Vendedora: Sarah — {mes_ano}</h4>", unsafe_allow_html=True)
@@ -35,13 +34,13 @@ if not required_metas.issubset(set(df_metas.columns)):
     st.error("A aba 'metas' deve conter: Tipo, Semana, Valor, Bonificacao")
     st.stop()
 
-# Processa dados
+# Processamento
 df_vendas["Data"] = pd.to_datetime(df_vendas["Data"], dayfirst=True, errors="coerce")
 df_vendas["Semana"] = df_vendas["Data"].dt.day.map(lambda d: 1 if d <= 7 else 2 if d <= 14 else 3 if d <= 21 else 4)
 semana_hoje = datetime.now().day
 semana_atual = 1 if semana_hoje <= 7 else 2 if semana_hoje <= 14 else 3 if semana_hoje <= 21 else 4
 
-# META MENSAL
+# Meta Mensal
 meta_mensal_row = df_metas[df_metas["Tipo"].str.lower() == "mensal"]
 meta_mensal = float(meta_mensal_row["Valor"].values[0])
 bonus_mensal = float(meta_mensal_row["Bonificacao"].values[0])
@@ -49,7 +48,7 @@ vendas_mensais = df_vendas["Valor"].sum()
 progresso_mensal = min(vendas_mensais / meta_mensal, 1.0)
 bonus_mensal_conquistado = bonus_mensal if progresso_mensal >= 1 else 0
 
-# VISUAL - MENSAL
+# Exibição Mensal
 st.subheader("🎯 Meta Mensal")
 st.markdown(f"""
 <div style='background-color: #f9f9f9; padding: 15px; border-radius: 10px;'>
@@ -68,7 +67,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# METAS SEMANAIS
+# Metas Semanais
 st.markdown("---")
 st.subheader("📅 Metas Semanais")
 
@@ -110,7 +109,7 @@ for _, linha in metas_semanais.iterrows():
     </div>
     """, unsafe_allow_html=True)
 
-# TOTAL DE BONIFICAÇÕES
+# Resumo Bonificações
 st.markdown("---")
 st.subheader("💰 Resumo de Bonificações")
 
