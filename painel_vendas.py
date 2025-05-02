@@ -1,56 +1,90 @@
 import streamlit as st
 import pandas as pd
 
-# Link da planilha em formato CSV
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1VQbm73b0Nmm7vSHhSv99IaxlXiHn70wuqI8Nsbx8xug/export?format=csv"
+# URL base das abas
+BASE_URL = "https://docs.google.com/spreadsheets/d/1VQbm73b0Nmm7vSHhSv99IaxlXiHn70wuqI8Nsbx8xug/gviz/tq?tqx=out:csv&sheet="
 
-st.set_page_config(page_title="Painel de Metas", layout="centered")
-st.title("📊 Painel de Metas de Vendas - Sarah")
+# Configurações de página
+st.set_page_config(page_title="Painel de Vendas", layout="centered")
+st.markdown("<h1 style='text-align: center; color: #444;'>📈 Painel de Metas de Vendas</h1>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #888;'>Vendedora: Sarah</h3>", unsafe_allow_html=True)
+st.markdown("---")
 
-# Carrega os dados da planilha
+# Função para carregar abas
 @st.cache_data(ttl=0)
-def carregar_dados():
-    try:
-        df = pd.read_csv(SHEET_URL)
-        df.columns = [col.strip().capitalize() for col in df.columns]
-        return df
-    except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
-        return pd.DataFrame()
+def carregar_aba(nome_aba):
+    url = BASE_URL + nome_aba
+    return pd.read_csv(url)
 
-df = carregar_dados()
+# Carrega dados
+df_vendas = carregar_aba("vendas")
+df_metas = carregar_aba("metas")
 
-# Validação das colunas
-if not all(col in df.columns for col in ["Data", "Vendedor", "Valor"]):
-    st.error("Colunas obrigatórias: Data, Vendedor, Valor")
+# Normaliza colunas
+df_vendas.columns = [col.strip().capitalize() for col in df_vendas.columns]
+df_metas.columns = [col.strip().capitalize() for col in df_metas.columns]
+
+# Valida colunas
+if not all(col in df_vendas.columns for col in ["Data", "Vendedor", "Valor"]):
+    st.error("A aba 'vendas' precisa conter: Data, Vendedor, Valor")
     st.stop()
 
-# Processa os dados
-df["Data"] = pd.to_datetime(df["Data"], dayfirst=True, errors='coerce')
-df["Semana"] = df["Data"].dt.isocalendar().week
+if not all(col in df_metas.columns for col in ["Tipo", "Semana", "Valor"]):
+    st.error("A aba 'metas' precisa conter: Tipo, Semana, Valor")
+    st.stop()
 
-# Meta mensal
-meta_mensal = 55464.00
-vendas_mensais = df["Valor"].sum()
-progresso_mensal = min(vendas_mensais / meta_mensal, 1.0)
+# Processa vendas
+df_vendas["Data"] = pd.to_datetime(df_vendas["Data"], dayfirst=True, errors="coerce")
+df_vendas["Semana"] = df_vendas["Data"].dt.isocalendar().week
+df_vendas["Ano"] = df_vendas["Data"].dt.year
 
-st.subheader("🎯 Meta Mensal")
-st.write(f"Vendas: **R$ {vendas_mensais:,.2f}** de R$ {meta_mensal:,.2f}")
-st.progress(progresso_mensal)
+# ==== METAS ====
+meta_mensal_row = df_metas[df_metas["Tipo"].str.lower() == "mensal"]
+meta_mensal = float(meta_mensal_row["Valor"].values[0]) if not meta_mensal_row.empty else 0
+vendas_mensais = df_vendas["Valor"].sum()
+progresso_mensal = min(vendas_mensais / meta_mensal, 1.0) if meta_mensal > 0 else 0
 
-# Metas semanais fixas (baseadas em semanas ISO)
-metas_semanais = {
-    18: 12643.00,
-    19: 11362.00,
-    20: 22802.00,
-    21: 8658.00
-}
+# ==== VISUAL MENSAL ====
+st.markdown("### 🎯 Meta Mensal")
+st.markdown(f"""
+<div style='background-color: #f9f9f9; padding: 15px; border-radius: 10px;'>
+    <b>Total vendido:</b> R$ {vendas_mensais:,.2f} <br>
+    <b>Meta mensal:</b> R$ {meta_mensal:,.2f} <br>
+    <b>Progresso:</b> {progresso_mensal*100:.1f}%
+</div>
+""", unsafe_allow_html=True)
 
+# Barra de progresso mais grossa
+st.markdown(f"""
+<div style='margin-top: 10px; height: 30px; background-color: #eee; border-radius: 5px;'>
+  <div style='width: {progresso_mensal*100:.1f}%; height: 100%; background-color: #4CAF50; border-radius: 5px; text-align: right; color: white; padding-right: 10px; line-height: 30px;'>
+    {progresso_mensal*100:.1f}%
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ==== VISUAL SEMANAL ====
 st.markdown("---")
-st.subheader("📆 Progresso Semanal")
+st.markdown("### 📅 Metas Semanais")
 
-for semana, meta in metas_semanais.items():
-    vendas = df[df["Semana"] == semana]["Valor"].sum()
-    progresso = min(vendas / meta, 1.0)
-    st.write(f"**Semana {semana}** — Vendas: R$ {vendas:,.2f} / Meta: R$ {meta:,.2f}")
-    st.progress(progresso)
+metas_semanais = df_metas[df_metas["Tipo"].str.lower() == "semanal"]
+
+for _, linha in metas_semanais.iterrows():
+    semana = int(linha["Semana"])
+    meta = float(linha["Valor"])
+    vendas = df_vendas[df_vendas["Semana"] == semana]["Valor"].sum()
+    progresso = min(vendas / meta, 1.0) if meta > 0 else 0
+
+    st.markdown(f"""
+    <div style='margin-bottom: 8px;'>
+        <b>Semana {semana}:</b> R$ {vendas:,.2f} de R$ {meta:,.2f} ({progresso*100:.1f}%)
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style='margin-bottom: 25px; height: 25px; background-color: #ddd; border-radius: 5px;'>
+      <div style='width: {progresso*100:.1f}%; height: 100%; background-color: #2196F3; border-radius: 5px; text-align: right; color: white; padding-right: 8px; line-height: 25px;'>
+        {progresso*100:.1f}%
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
